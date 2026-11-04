@@ -1,0 +1,505 @@
+---
+title: "231026prac3"
+output: html_document
+date: "2026-10-23"
+---
+
+```{r}
+getwd()
+length(list.files())
+'gadm41_AUS.gpkg' %in% list.files()
+[1] TRUE
+```
+
+```{r}
+library(sf) 
+library(here)
+st_layers("gadm41_AUS.gpkg")
+
+#read in the GeoPackage layer for the whole of Australia (layer ending in 0)
+Ausoutline <- st_read("gadm41_AUS.gpkg", 
+                      layer='ADM_ADM_0')
+
+# check that the coordinate reference systems of sf or sp objects using the print function:
+print(Ausoutline)
+
+```
+Whilst we were able to identify the CRS of our layer using print another alternative is to find the proj4 string.
+*A proj4 string* is meant to be a compact way of identifying a coordinate reference system. Let’s extract ours…
+
+To find the proj4-strings for a whole range of different geographic projections, use the search facility at 
+http://spatialreference.org/ or http://epsg.io/.
+```{r}
+st_crs(Ausoutline)$proj4string
+
+```
+
+## 3.5.1.4 EPSG
+
+##proj4
+Whilst we were able to identify the CRS of our layer using print another alternative is to find the proj4 string. A proj4 string is meant to be a compact way of identifying a coordinate reference system. Let’s extract ours…
+
+The proj4-string basically tells the computer where on the earth to locate the coordinates that make up the geometries in your file and what distortions to apply (i.e. if to flatten it out completely etc.) It’s composed of a list of parameters separated by a +. Here are projection proj uses latitude and longitude (so it’s a geographic not projected CRS). The datum is WGS84 that uses Earth’s centre mass as the coordinate origin (0,0).
+
+The Coordiante systems in R chapter by Gimond (2019) provides much more information on Proj4. However, i’d advise trying to use EPSG codes, which we come onto next.
+
+Sometimes you can download data from the web and it doesn’t have a CRS. If any boundary data you download does not have a coordinate reference system attached to it (NA is displayed in the coord. ref section), this is not a huge problem — it can be added afterwards by adding the proj4string to the file or just assigning an EPSG code.
+To find the proj4-strings for a whole range of different geographic projections, use the search facility at http://spatialreference.org/ or http://epsg.io/.
+
+
+
+the *European Petroleum Survey Group (EPSG)* — (naturally!). Now managed and maintained by the International Association of Oil and Gas producers — EPSG codes are *short numbers represent all coordinate reference systems in the world and link directly to proj4 strings*. We saw these last week in the [Making some maps] section.
+
+The EPSG code for the WGS84 World Geodetic System (usually the default CRS for most spatial data) is 4326 — http://epsg.io/4326
+
+If our Australian outline didn’t have a spatial reference system, we could have just set it using *st_set_crs()*
+```{r}
+library(tidyverse)
+library(dplyr)
+
+st_crs(Ausoutline)$proj4string
+
+Ausoutline <- Ausoutline %>%
+  st_set_crs(., 4326)
+```
+Or, more concisely…but remember this is only useful if there is no CRS when you load the data.
+```{r}
+#or more concisely
+Ausoutline <- st_read("gadm41_AUS.gpkg", 
+                      layer='ADM_ADM_0') %>% 
+  st_set_crs(4326)
+```
+
+## Reprojecting 
+
+So once your data has a coordinates system to work with, we can re-project or transform to anything we like. For SF objects, like our outline of Australia it’s carried out using st_transform. 
+
+Here we are changing from WGS84 to GDA94, which is a local CRS for Australia and has the *EPSG code 3112…*.
+```{r}
+AusoutlinePROJECTED <- Ausoutline %>%
+  st_transform(.,3112)
+
+print(AusoutlinePROJECTED)
+```
+This is the best resources I’ve come across explaining coordinate reference systems are:
+
+I hate coordinate systems
+https://ihatecoordinatesystems.com/#mental-model
+ESRI’s coordinate systems and projections for beginners
+https://resource.esriuk.com/blog/2012-3-26-coordinate-systems-and-projections-for-beginners-html/
+The story of Mercator
+https://mercator.tass.com/mercator-heritage
+
+
+## WorldClim data  
+this is a dataset of free global climate layers (rasters) with a spatial resolution of between 1km^2-240km^2
+
+Download the data from: https://www.worldclim.org/data/worldclim21.html
+
+Select any variable you want at the 5 minute second resolution.
+
+Unzip and move the data to your project folder. Now load the data. We could do this individually….
+```{r}
+library(terra)
+jan<-terra::rast("wc2.1_5m_tavg_01.tif")
+# have a look at the raster layer jan
+jan
+
+plot(jan)
+```
+
+
+Now we can actually see some data…here is a quick example of using the Mollweide projection saved to a new object. The Mollweide projection retains area proportions whilst compromising accuracy of angle and shape
+
+```{r}
+# set the proj 4 to a new object
+
+pr1 <- terra::project(jan, "+proj=moll +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+plot(pr1)
+
+```
+
+to WGS84…..
+```{r}
+pr1 <- pr1 %>%
+  terra::project(., "+proj=longlat +datum=WGS84 +no_defs +type=crs")
+plot(pr1)
+
+```
+
+3.5.3 Data loading
+Ok, projections over. Let’s move forward with the practical…
+
+A better and more efficient way is to firstly list all the files stored within our directory with~ *dir_info() from the fs pacakge*, then use *dplyr in conjunction with str_detect() from stringr to search for filenames* containing tif. Finally just select the paths.
+
+But let’s firstly explore what dir_info() does…
+```{r}
+# look in our folder, find the files that end with .tif and 
+library(fs)
+dir_info("/Users/antoliahou/Desktop/COURSEWORK/R/GIS/231026/") 
+
+```
+
+```{r}
+library(tidyverse)
+listfiles<-dir_info("/Users/antoliahou/Desktop/COURSEWORK/R/GIS/231026/") %>%
+  filter(str_detect(path, ".tif")) %>%
+  dplyr::select(path)%>%
+  pull()
+
+#have a look at the file names 
+listfiles
+```
+
+
+```{r}
+worldclimtemp <- listfiles %>%
+  terra::rast()
+  
+#have a look at the raster stack
+worldclimtemp
+
+# access the january layer
+worldclimtemp[[1]]
+
+library(tidyterra)
+
+worldclimtemp %>%
+  tidyterra::select(wc2.1_5m_tavg_01)
+
+##rename our layers within the stack:
+
+
+month <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+names(worldclimtemp) <- month
+
+```
+
+```{r}
+names(worldclimtemp)
+
+```
+
+```{r}
+#get data for just january
+worldclimtemp$Jan
+
+worldclimtemp%>%
+  tidyterra::select(Jan)
+```
+
+3.5.4 Raster location
+
+```{r}
+site <- c("Brisbane", "Melbourne", "Perth", "Sydney", "Broome", "Darwin", "Orange", 
+          "Bunbury", "Cairns", "Adelaide", "Gold Coast", "Canberra", "Newcastle", 
+          "Wollongong", "Logan City" )
+lon <- c(153.03, 144.96, 115.86, 151.21, 122.23, 130.84, 149.10, 115.64, 145.77, 
+         138.6, 153.43, 149.13, 151.78, 150.89, 153.12)
+lat <- c(-27.47, -37.91, -31.95, -33.87, 17.96, -12.46, -33.28, -33.33, -16.92, 
+         -34.93, -28, -35.28, -32.93, -34.42, -27.64)
+#Put all of this inforamtion into one list 
+samples <- data.frame(site, lon, lat, row.names="site")
+# Extract the data from the Rasterstack for all points 
+AUcitytemp<- terra::extract(worldclimtemp, samples)
+```
+Add the city names to the rows of AUcitytemp
+When we extract data from a raster with a point or polygon it is termed zonal statistics in GIS - we want to get some statistics from the zone (point / polygon) for the area that is over the raster.
+```{r}
+Aucitytemp2 <- AUcitytemp %>% 
+  as_tibble()%>% 
+  add_column(Site = site, .before = "Jan")
+```
+
+3.6 Part 2 descriptive statistics
+Descriptive (or summary) statistics provide a summary of our data, often forming the base of quantitative analysis leading to inferential statistics which we use to make inferences about our data (e.g. judegements of the probability that the observed difference between two data sets is not by chance)
+
+```{r}
+Perthtemp <- Aucitytemp2 %>%
+  filter(site=="Perth")
+Perthtemp <- Aucitytemp2[3,]
+```
+
+```{r}
+hist(as.numeric(Perthtemp))
+```
+
+Remember what we’re looking at here. The x axis is the temperature and the y is the frequency of occurrence.
+
+There seems to be an outlier with this plot as we haven’t removed the columns we don’t need - look in the Perthtemp tibble and you will see an ID of 3 which is plotted above! We will solve this next…
+
+That’s a pretty simple histogram, let’s improve the aesthetics a bit.
+```{r}
+library(tidyverse)
+#define where you want the breaks in the historgram
+userbreak<-c(8,10,12,14,16,18,20,22,24,26)
+
+# remove the ID and site columns
+Perthtemp <- Aucitytemp2 %>%
+  filter(site=="Perth")
+
+t<-Perthtemp %>%
+ dplyr::select(Jan:Dec)
+
+  hist((as.numeric(t)), 
+     breaks=userbreak, 
+     col="red", 
+     main="Histogram of Perth Temperature", 
+     xlab="Temperature", 
+     ylab="Frequency")
+
+```
+
+```{r}
+histinfo <- as.numeric(t) %>%
+  as.numeric()%>%
+  hist(.)
+```
+
+```{r}
+histinfo
+```
+
+```{r}
+plot(Ausoutline$geom)
+
+AusoutSIMPLE <- Ausoutline %>%
+  st_simplify(., dTolerance = 1000) %>%
+  st_geometry()%>%
+  plot()
+```
+Next, set our map extent (where we want to clip the data to) to the outline of Australia then crop our WorldClim dataset to it.
+HOWEVER, we need to make sure that both of our layers are in the same coordinate reference system when we combine them…so..
+```{r}
+print(Ausoutline)
+
+#this works nicely for rasters
+crs(worldclimtemp)
+
+Austemp <- Ausoutline %>%
+  # now crop our temp data to the extent
+  terra::crop(worldclimtemp,.)
+
+# plot the output
+plot(Austemp)
+```
+
+```{r}
+exactAus<-terra::mask(Austemp, Ausoutline)
+#subset using the known location of the raster
+hist(exactAus[[3]], col="red", main ="March temperature")
+```
+
+```{r}
+exactAus %>%
+  tidyterra::select(Mar)%>%
+  hist(., col="red", main ="March temperature")
+```
+
+3.6.4 Histogram with ggplot
+With tidyterra we can use rasters directly within ggplot2 with the geom_spatraster() function. However, this is just for plotting the raster layer, for example a very basic plot….
+```{r}
+ggplot() +
+  # function from tidyterra
+  geom_spatraster(
+    # the raster 
+    data = exactAus,
+    # the layer within the raster
+    aes(fill = Mar)
+  )
+```
+
+```{r}
+exactAusdf <- exactAus %>%
+  as.data.frame()
+```
+
+```{r}
+library(ggplot2)
+# set up the basic histogram
+gghist <- ggplot(exactAusdf, 
+                 aes(x=Mar)) + 
+  geom_histogram(color="black", 
+                 fill="white")+
+  labs(title="Ggplot2 histogram of Australian March temperatures", 
+       x="Temperature", 
+       y="Frequency")
+# add a vertical line to the hisogram showing mean tempearture
+gghist + geom_vline(aes(xintercept=mean(Mar, 
+                                        na.rm=TRUE)),
+            color="blue", 
+            linetype="dashed", 
+            size=1)+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+squishdata<-exactAusdf%>%
+  pivot_longer(
+  cols = 1:12,
+  names_to = "Month",
+  values_to = "Temp"
+)
+
+```
+
+```{r}
+twomonths <- squishdata %>%
+  # | = OR
+  filter(., Month=="Jan" | Month=="Jun")
+```
+
+
+Get the mean for each month we selected, remember group_by() and summarise() from last week?
+```{r}
+meantwomonths <- twomonths %>%
+  group_by(Month) %>%
+  summarise(mean=mean(Temp, na.rm=TRUE))
+
+meantwomonths
+```
+
+
+```{r}
+
+ggplot(twomonths, aes(x=Temp, color=Month, fill=Month)) +
+  geom_histogram(position="identity", alpha=0.5)+
+  geom_vline(data=meantwomonths, 
+             aes(xintercept=mean, 
+                 color=Month),
+             linetype="dashed")+
+  labs(title="Ggplot2 histogram of Australian Jan and Jun
+       temperatures",
+       x="Temperature",
+       y="Frequency")+
+  theme_classic()+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Have you been getting an annoying error message about bin size and non-finate values? Me too!…Bin size defaults to 30 in ggplot2 and the non-finate values is referring to lots of NAs (no data) that we have in our dataset. In the code below i’ve:
+dropped all the NAs with drop_na()
+
+made sure that the Month column has the levels specified, which will map in descending order (e.g. Jan, Feb, March..)
+
+selected a bin width of 5 and produced a faceted plot…
+```{r}
+data_complete_cases <- squishdata %>%
+  drop_na()%>% 
+  mutate(Month = factor(Month, levels = c("Jan","Feb","Mar",
+                                          "Apr","May","Jun",
+                                          "Jul","Aug","Sep",
+                                          "Oct","Nov","Dec")))
+
+# Plot faceted histogram
+ggplot(data_complete_cases, aes(x=Temp, na.rm=TRUE))+
+  geom_histogram(color="black", binwidth = 5)+
+  labs(title="Ggplot2 faceted histogram of Australian temperatures", 
+       x="Temperature",
+       y="Frequency")+
+  facet_grid(Month ~ .)+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+```{r}
+library(plotly)
+# split the data for plotly based on month
+
+jan <- squishdata %>%
+  drop_na() %>%
+  filter(., Month=="Jan")
+
+jun <- squishdata %>%
+  drop_na() %>%
+  filter(., Month=="Jun")
+
+# give axis titles
+x <- list (title = "Temperature")
+y <- list (title = "Frequency")
+
+# set the bin width
+xbinsno<-list(start=0, end=40, size = 2.5)
+
+# plot the histogram calling all the variables we just set
+ihist<-plot_ly(alpha = 0.6) %>%
+        add_histogram(x = jan$Temp,
+        xbins=xbinsno, name="January") %>%
+        add_histogram(x = jun$Temp,
+        xbins=xbinsno, name="June") %>% 
+        layout(barmode = "overlay", xaxis=x, yaxis=y)
+
+ihist
+```
+
+
+```{r}
+# mean per month
+meanofall <- squishdata %>%
+  group_by(Month) %>%
+  summarise(mean = mean(Temp, na.rm=TRUE))
+
+# print the top 1
+head(meanofall, n=1)
+```
+
+
+```{r}
+# standard deviation per month
+sdofall <- squishdata %>%
+  group_by(Month) %>%
+  summarize(sd = sd(Temp, na.rm=TRUE))
+
+# maximum per month
+maxofall <- squishdata %>%
+  group_by(Month) %>%
+  summarize(max = max(Temp, na.rm=TRUE))
+
+# minimum per month
+minofall <- squishdata %>%
+  group_by(Month) %>%
+  summarize(min = min(Temp, na.rm=TRUE))
+
+# Interquartlie range per month
+IQRofall <- squishdata %>%
+  group_by(Month) %>%
+  summarize(IQR = IQR(Temp, na.rm=TRUE))
+
+# perhaps you want to store multiple outputs in one list..
+lotsofstats <- squishdata %>%
+  group_by(Month) %>%
+  summarize(IQR = IQR(Temp, na.rm=TRUE), 
+            max=max(Temp, na.rm=T))
+
+# or you want to know the mean (or some other stat) 
+#for the whole year as opposed to each month...
+
+meanwholeyear=squishdata %>%
+  summarize(meanyear = mean(Temp, na.rm=TRUE))
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+

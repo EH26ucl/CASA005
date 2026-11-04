@@ -1,0 +1,13 @@
+---
+title: "151026assessment"
+format: html
+editor: visual
+---
+
+Basics
+
+```{r}
+1+5
+4*5^2
+
+```
