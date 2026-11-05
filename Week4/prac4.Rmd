@@ -1,0 +1,170 @@
+---
+title: "prac4"
+output: html_document
+date: "2026-11-01"
+---
+
+```{r setup, include=FALSE}
+list.files("data/week4")
+```
+
+
+```{r cars}
+getwd()
+list.files()
+install.packages("countrycode")
+```
+
+```{r}
+library(tidyverse)
+library(sf)
+library(countrycode)
+library(readxl)
+
+# Gender Inequality Index
+gii <- read_csv(
+  "../Data/week4/gii.csv"
+)
+
+# World spatial data
+world <- st_read(
+  "../Data/week4/World_Countries_(Generalized)_-7542350475356456390/World_Countries_Generalized.shp"
+)
+```
+```{r}
+names(gii)
+names(world)
+
+glimpse(gii)
+glimpse(world)
+```
+
+```{r}
+library(readxl)
+
+gii_raw <- read_csv(
+  "../Data/week4/gii.csv",
+  col_names = FALSE
+)
+
+print(gii_raw[1:15, 1:8])
+
+library(dplyr)
+
+gii |>
+  filter(indexCode == "GII") |>
+  distinct(indicatorCode, indicator) |>
+  print(n = Inf)
+```
+```{r}
+library(dplyr)
+library(tidyr)
+
+gii_change <- gii |>
+  filter(
+    indicatorCode == "gii",
+    year %in% c(2010, 2019)
+  ) |>
+  select(
+    iso3 = countryIsoCode,
+    country,
+    year,
+    value
+  ) |>
+  pivot_wider(
+    names_from = year,
+    values_from = value,
+    names_prefix = "GII_"
+  ) |>
+  mutate(
+    gii_diff = GII_2019 - GII_2010
+  )
+
+head(gii_change)
+```
+
+```{r}
+world_gii <- world |>
+  mutate(
+    iso3 = countrycode(ISO, "iso2c", "iso3c")
+  ) |>
+  left_join(gii_change, by = "iso3")
+
+
+```
+
+
+```{r}
+# 查看结果
+head(st_drop_geometry(world_gii))
+
+# 成功匹配的空间要素数量
+sum(!is.na(world_gii$gii_diff))
+
+# 没有完整 GII 差值的空间要素数量
+sum(is.na(world_gii$gii_diff))
+
+world_gii |>
+  filter(is.na(gii_diff)) |>
+  st_drop_geometry() |>
+  select(COUNTRY, ISO, iso3)
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(world_gii) +
+  geom_sf(
+    aes(fill = gii_diff),
+    colour = NA
+  ) +
+  scale_fill_gradient2(
+    low = "blue",
+    mid = "white",
+    high = "red",
+    midpoint = 0,
+    na.value = "grey85"
+  ) +
+  labs(
+    title = "Global Change in Gender Inequality",
+    subtitle = "2010–2019",
+    fill = "Δ GII",
+    caption = "Source: UNDP Human Development Reports"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+gii_map <- ggplot(world_gii_equalearth) +
+  geom_sf(aes(fill = gii_diff), colour = NA) +
+  scale_fill_gradient2(
+    low = "blue",
+    mid = "white",
+    high = "red",
+    midpoint = 0,
+    na.value = "grey85"
+  ) +
+  labs(
+    title = "Global Change in Gender Inequality",
+    subtitle = "2010–2019",
+    fill = "Δ GII",
+    caption = "Source: UNDP Human Development Reports"
+  ) +
+  theme_minimal()
+
+gii_map
+
+```
+
+```{r}
+dir.create("figures", showWarnings = FALSE)
+
+ggsave(
+  filename = "figures/GII_change_2010_2019.png",
+  plot = gii_map,
+  width = 12,
+  height = 7,
+  dpi = 300
+)
+
+```
